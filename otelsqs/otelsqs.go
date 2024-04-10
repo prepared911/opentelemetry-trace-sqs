@@ -50,6 +50,7 @@ package otelsqs
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -92,6 +93,7 @@ func InjectIntoSqsMessageAttributes(ctx context.Context, sqsMessage *types.Messa
 type SqsCarrierAttributes struct {
 	messageAttributes map[string]types.MessageAttributeValue
 	propagator        propagation.TextMapPropagator
+	mux               sync.RWMutex
 }
 
 // NewCarrierAttributes creates a carrier attached to an SQS message.
@@ -155,6 +157,8 @@ func (c *SqsCarrierAttributes) Inject(ctx context.Context, messageAttributes map
 
 // Get returns the value for the key.
 func (c *SqsCarrierAttributes) Get(key string) string {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
 	attr, found := c.messageAttributes[key]
 	if !found {
 		return ""
@@ -169,6 +173,8 @@ const stringType = "String"
 
 // Set stores a key-value pair.
 func (c *SqsCarrierAttributes) Set(key, value string) {
+	c.mux.Lock()
+	defer c.mux.Unlock()
 	c.messageAttributes[key] = types.MessageAttributeValue{
 		DataType:    aws.String(stringType),
 		StringValue: aws.String(value),
@@ -177,6 +183,8 @@ func (c *SqsCarrierAttributes) Set(key, value string) {
 
 // Keys lists the keys in the carrier.
 func (c *SqsCarrierAttributes) Keys() []string {
+	c.mux.RLock()
+	defer c.mux.RUnlock()
 	keys := make([]string, 0, len(c.messageAttributes))
 	for k := range c.messageAttributes {
 		keys = append(keys, k)
